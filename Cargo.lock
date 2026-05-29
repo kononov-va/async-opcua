@@ -2869,6 +2869,7 @@ name = "vzljot_opcua"
 version = "0.1.0"
 dependencies = [
  "pico-args",
+ "rand 0.8.5",
  "serde",
  "serde_json",
 ]

@@ -3,9 +3,13 @@
 // Copyright (C) 2026
 
 //!OPC UA server for different flowmeters designed by developer "vzljot"
+use std::io::{Read, Write};
+use std::time::Duration;
 use std::{fs, io};
 use std::path::PathBuf; //, sync::Arc}
+//use rand::prelude::*;
 
+use rand::random;
 use serde::{Deserialize, Serialize};
 //use serde_json::Result;
 
@@ -66,6 +70,8 @@ struct Device {
     device_address: u8,
     device_type: DeviceType,
     device_name: String,
+    connection_timeout: u64,
+    read_timeout: u64,
 }
 fn main() {
     let args = Args::parse_args().unwrap();
@@ -83,9 +89,31 @@ fn main() {
 }
 
 fn request_device(device: &Device) -> Result<String, io::Error> {
-    let str = std::net::TcpStream::connect(&device.device_ip_address)?;
     match device.device_type {
-        DeviceType::LiteM => Ok("LiteM".to_string()),
+        DeviceType::LiteM => match request_lite_m(device) {
+            Ok(answ) => Ok(answ.to_string()),
+            Err(e) => Err(e),
+        },
         DeviceType::URSV5xx => Ok("URSV".to_string()),
+    }
+}
+
+fn request_lite_m(device_lite_m: &Device) -> Result<f32, io::Error> {
+    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0xC0, 0x08, 0, 0x02];
+    request[6] = device_lite_m.device_address;
+    let session_id: u16 = random::<u16>();
+    request[0..2].copy_from_slice(&session_id.to_be_bytes());
+ 
+    let mut str = std::net::TcpStream::connect_timeout(&device_lite_m.device_ip_address.parse::<core::net::SocketAddr>().unwrap(), 
+        Duration::from_millis(device_lite_m.connection_timeout))?;
+
+    str.write(&request)?;
+
+    str.set_read_timeout(Some(Duration::from_millis(device_lite_m.read_timeout)))?;
+ 
+    let mut answer: [u8; 56]= [0; 56];
+    match str.read(&mut answer) {
+        Ok(_) => Ok(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])),
+        Err(e) => Err(e),
     }
 }

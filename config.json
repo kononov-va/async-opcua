@@ -3,6 +3,8 @@
     "device_address":1,
     "device_type":"LiteM",
     "device_name":"test",
-    "device_ip_address": "127.0.0.1:22"
+    "device_ip_address": "10.11.4.191:502",
+    "connection_timeout": 300,
+    "read_timeout": 300
 }
 ]
