@@ -7,10 +7,12 @@ use std::io::{Read, Write};
 use std::time::Duration;
 use std::{fs, io};
 use std::path::PathBuf; //, sync::Arc}
-//use rand::prelude::*;
+use chrono::prelude::*;
 
+use opcua::types::ChassisIdSubtype::Local;
 use rand::random;
 use serde::{Deserialize, Serialize};
+use opcua::types::{self, DateTime, data_value};
 //use serde_json::Result;
 
 struct Args {
@@ -116,4 +118,36 @@ fn request_lite_m(device_lite_m: &Device) -> Result<f32, io::Error> {
         Ok(_) => Ok(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])),
         Err(e) => Err(e),
     }
+}
+
+fn request_lite_m_arch(device_lite_m: &Device, request_time: DateTime<Local>) -> Result<data_value::DataValue, io::Error> {
+    let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x02, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
+    request[6] = device_lite_m.device_address;
+    let session_id: u16 = random::<u16>();
+    request[0..2].copy_from_slice(&session_id.to_be_bytes());
+    request[13] = u8::from(request_time.second().to_be_bytes()[3]);
+    request[14] = u8::from(request_time.minute().to_be_bytes()[3]);
+    request[15] = u8::from(request_time.hour().to_be_bytes()[3]);
+    request[16] = u8::from(request_time.day().to_be_bytes()[3]);
+    request[17] = u8::from(request_time.month().to_be_bytes()[3]);
+    request[18] = u8::from((request_time.year() - 2000).to_be_bytes()[3]);
+
+    let mut str = std::net::TcpStream::connect_timeout(&device_lite_m.device_ip_address.parse::<core::net::SocketAddr>().unwrap(), 
+        Duration::from_millis(device_lite_m.connection_timeout))?;
+
+    str.write(&request)?;
+
+    str.set_read_timeout(Some(Duration::from_millis(device_lite_m.read_timeout)))?;
+ 
+    let mut answer: [u8; 56]= [0; 40];
+    match str.read(&mut answer) {
+        Ok(_) => {
+            Ok(data_value::DataValue::new_at((i32::from_be_bytes([answer[13], answer[14], answer[15], answer[16]]) +
+                f32::from_be_bytes([answer[17], answer[18], answer[19], answer[20]]) - 
+                i32::from_be_bytes([answer[21], answer[22], answer[23], answer[24]]) -
+                f32::from_be_bytes([answer[25], answer[26], answer[27], answer[28]])), 
+                DateTime from(chrono::DateTime::from_timestamp_secs(i64::from(u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))))))
+        }
+        Err(e) => Err(e),
+    }    
 }
