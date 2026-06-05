@@ -3,13 +3,14 @@
 // Copyright (C) 2026
 
 //!OPC UA server for different flowmeters designed by developer "vzljot"
+use core::fmt;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{fs, io};
 use std::path::PathBuf; //, sync::Arc}
-use chrono::prelude::*;
+use chrono::{Local, prelude::*};
 
-use opcua::types::ChassisIdSubtype::Local;
+//use opcua::types::ChassisIdSubtype::Local as opcua_Local;
 use rand::random;
 use serde::{Deserialize, Serialize};
 use opcua::types::{self, DateTime, data_value};
@@ -92,9 +93,17 @@ fn main() {
 
 fn request_device(device: &Device) -> Result<String, io::Error> {
     match device.device_type {
-        DeviceType::LiteM => match request_lite_m(device) {
-            Ok(answ) => Ok(answ.to_string()),
-            Err(e) => Err(e),
+        DeviceType::LiteM => {
+            let st; 
+            match request_lite_m(device) {
+                Ok(answ) => {st = answ.to_string(); 
+                    let arc = match request_lite_m_arch(device, chrono::Local.with_ymd_and_hms(2026, 6, 5, 14, 0, 0).unwrap()) {
+                        Ok(answ) => Ok(answ),
+                        Err(e) => Err(e)
+                    };
+                    Ok(format!("{} {:?}", st, arc))},
+                Err(e) => Err(e),
+            }       
         },
         DeviceType::URSV5xx => Ok("URSV".to_string()),
     }
@@ -120,13 +129,13 @@ fn request_lite_m(device_lite_m: &Device) -> Result<f32, io::Error> {
     }
 }
 
-fn request_lite_m_arch(device_lite_m: &Device, request_time: DateTime<Local>) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x02, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
+fn request_lite_m_arch(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>) -> Result<data_value::DataValue, io::Error> {
+    let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
-    request[13] = u8::from(request_time.second().to_be_bytes()[3]);
-    request[14] = u8::from(request_time.minute().to_be_bytes()[3]);
+    //request[13] = u8::from(request_time.second().to_be_bytes()[3]);
+    //request[14] = u8::from(request_time.minute().to_be_bytes()[3]);
     request[15] = u8::from(request_time.hour().to_be_bytes()[3]);
     request[16] = u8::from(request_time.day().to_be_bytes()[3]);
     request[17] = u8::from(request_time.month().to_be_bytes()[3]);
@@ -139,15 +148,22 @@ fn request_lite_m_arch(device_lite_m: &Device, request_time: DateTime<Local>) ->
 
     str.set_read_timeout(Some(Duration::from_millis(device_lite_m.read_timeout)))?;
  
-    let mut answer: [u8; 56]= [0; 40];
+    let mut answer: [u8; 40]= [0; 40];
     match str.read(&mut answer) {
         Ok(_) => {
-            Ok(data_value::DataValue::new_at((i32::from_be_bytes([answer[13], answer[14], answer[15], answer[16]]) +
-                f32::from_be_bytes([answer[17], answer[18], answer[19], answer[20]]) - 
-                i32::from_be_bytes([answer[21], answer[22], answer[23], answer[24]]) -
-                f32::from_be_bytes([answer[25], answer[26], answer[27], answer[28]])), 
-                DateTime from(chrono::DateTime::from_timestamp_secs(i64::from(u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))))))
+              Ok(data_value::DataValue::new_at( get_lite_m_volume(&answer[13..29]), 
+                DateTime::from(chrono::DateTime::from_timestamp_secs(i64::from(u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))).unwrap())))
         }
         Err(e) => Err(e),
     }    
+}
+
+fn get_lite_m_volume(buffer: &[u8]) -> f64
+{
+    let positive_i = i32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+    let positive_f = f32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
+    let negative_i = i32::from_be_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]);
+    let negative_f = f32::from_be_bytes([buffer[12], buffer[13], buffer[14], buffer[15]]);
+
+    f64::from(positive_i) + f64::from(positive_f) - f64::from(negative_i) - f64::from(negative_f)
 }
