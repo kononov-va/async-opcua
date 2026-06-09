@@ -96,12 +96,13 @@ fn request_device(device: &Device) -> Result<String, io::Error> {
         DeviceType::LiteM => {
             let st; 
             match request_lite_m(device) {
-                Ok(answ) => {st = answ.to_string(); 
-                    let arc = match request_lite_m_arch(device, chrono::Local.with_ymd_and_hms(2026, 6, 5, 14, 0, 0).unwrap()) {
+                Ok(answ) => {st = format!("{:?}", answ); 
+                    let arc = match request_lite_m_arch(device, 
+                        chrono::Local::now().checked_sub_signed(chrono::Duration::hours(1)).unwrap()) {
                         Ok(answ) => Ok(answ),
                         Err(e) => Err(e)
                     };
-                    Ok(format!("{} {:?}", st, arc))},
+                    Ok(format!("current {} archive {:?}", st, arc))},
                 Err(e) => Err(e),
             }       
         },
@@ -109,7 +110,7 @@ fn request_device(device: &Device) -> Result<String, io::Error> {
     }
 }
 
-fn request_lite_m(device_lite_m: &Device) -> Result<f32, io::Error> {
+fn request_lite_m(device_lite_m: &Device) -> Result<data_value::DataValue, io::Error> {
     let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0xC0, 0x08, 0, 0x02];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
@@ -124,7 +125,7 @@ fn request_lite_m(device_lite_m: &Device) -> Result<f32, io::Error> {
  
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
-        Ok(_) => Ok(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])),
+        Ok(_) => Ok(data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))),
         Err(e) => Err(e),
     }
 }
@@ -134,8 +135,6 @@ fn request_lite_m_arch(device_lite_m: &Device, request_time: chrono::DateTime<ch
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
-    //request[13] = u8::from(request_time.second().to_be_bytes()[3]);
-    //request[14] = u8::from(request_time.minute().to_be_bytes()[3]);
     request[15] = u8::from(request_time.hour().to_be_bytes()[3]);
     request[16] = u8::from(request_time.day().to_be_bytes()[3]);
     request[17] = u8::from(request_time.month().to_be_bytes()[3]);
