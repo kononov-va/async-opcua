@@ -1,9 +1,17 @@
 use async_trait::async_trait;
 
-use opcua::server::node_manager::memory::{
-    InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
-    InMemoryNodeManagerImplBuilder, NamespaceMetadata,
+use opcua::server::{
+    node_manager::{
+        memory::{
+            InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
+            InMemoryNodeManagerImplBuilder,
+        },
+        NodeManagersRef, ServerContext, NodeManagerBuilder,
+    },
+    address_space::{read_node_value, write_node_value, AddressSpace},
 };
+
+use opcua::server::diagnostics::NamespaceMetadata;
 
 // Node manager impl for the vzljot namespace.
 pub struct VzljotNodeManagerImpl {
@@ -60,5 +68,19 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
 
     fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl VzljotNodeManagerImpl {
+    fn new(namespaces: Vec<NamespaceMetadata>, name: &str, node_managers: NodeManagersRef) -> Self {
+        Self {
+            //write_cbs: Default::default(),
+            //read_cbs: Default::default(),
+            //method_cbs: Default::default(),
+            namespaces,
+            name: name.to_owned(),
+            node_managers,
+            //samplers: SyncSampler::new(),
+        }
     }
 }
