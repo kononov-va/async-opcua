@@ -9,6 +9,7 @@ serde_json.workspace = true
 pico-args = { version = "0.5"}
 rand.workspace = true
 chrono.workspace = true
+async-trait = { workspace = true }
 
 [dependencies.async-opcua]
 path = "../async-opcua"
