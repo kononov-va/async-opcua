@@ -3,15 +3,24 @@
 // Copyright (C) 2026
 
 //!OPC UA server for different flowmeters designed by developer "vzljot"
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{fs, io};
 use std::path::PathBuf; //, sync::Arc}
 use chrono::{prelude::*};
 
+use opcua::types;
+//use opcua::xml::schema::opc_ua_types::NodeId;
 use rand::random;
 use serde::{Deserialize, Serialize};
-use opcua::types::{DateTime, data_value};
+use opcua::{
+    types::{DateTime, data_value, node_id},
+    server::{ServerConfig, ServerBuilder, diagnostics::NamespaceMetadata, address_space},
+};
+
+use crate::VzljotNodeManager::vzljot_node_manager;
+
 mod VzljotNodeManager;
 
 struct Args {
@@ -74,18 +83,50 @@ struct Device {
     connection_timeout: u64,
     read_timeout: u64,
 }
-fn main() {
+
+#[derive(Deserialize, Serialize, Debug)]
+struct VzljotServerConfig {
+    server_config: ServerConfig,
+    devices: Vec<Device>,
+}
+
+#[tokio::main]
+async fn main() {
     let args = Args::parse_args().unwrap();
     if args.help {
         Args::usage();
     } else {
-        let devices: Vec<Device> = {
+        let config: VzljotServerConfig = {
             let cf = fs::read_to_string(args.config_path).expect("Config file not found");
             serde_json::from_str(&cf).unwrap()
         };
+        //println!("{:?}", config.server_config.endpoints);
+        let (server, handle) = ServerBuilder::new()
+            .with_config(config.server_config.clone())
+            .with_node_manager(vzljot_node_manager(
+                 NamespaceMetadata {
+                    namespace_uri: "urn:VzljotServer".to_owned(),
+                    ..Default::default()
+                }, "Vzljot"))
+            .build().unwrap();
+        
+        let node_manager = handle
+            .node_managers()
+            .get_of_type::<VzljotNodeManager::VzljotNodeManager>()
+            .unwrap();
 
-        let test = request_device(&devices[0]).unwrap();
-        println!("{:?}", test);
+        let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();
+
+        let test_node_id = node_id::NodeId::new(ns, "vzljot_test");
+
+        let mut addr = node_manager.address_space().write();
+
+        address_space::VariableBuilder::new(&test_node_id, "VzljotTestVariable", "VzljotVariable")
+            .data_type(types::generated::node_ids::DataTypeId::Int32)
+            .value(20).insert(&mut *addr);
+
+        //let test = request_device(&devices[0]).unwrap();
+        server.run().await.unwrap();
     }
 }
 

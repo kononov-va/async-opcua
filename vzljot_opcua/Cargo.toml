@@ -10,6 +10,10 @@ pico-args = { version = "0.5"}
 rand.workspace = true
 chrono.workspace = true
 async-trait = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+
+async-opcua-nodes = { path = "../async-opcua-nodes", version = "0.18.0" }
 
 [dependencies.async-opcua]
 path = "../async-opcua"

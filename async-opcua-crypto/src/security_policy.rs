@@ -77,7 +77,7 @@ impl FromStr for SecurityPolicy {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+         Ok(match s {
             constants::SECURITY_POLICY_NONE | constants::SECURITY_POLICY_NONE_URI => {
                 SecurityPolicy::None
             }

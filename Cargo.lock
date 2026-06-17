@@ -2869,12 +2869,15 @@ name = "vzljot_opcua"
 version = "0.1.0"
 dependencies = [
  "async-opcua",
+ "async-opcua-nodes",
  "async-trait",
  "chrono",
  "pico-args",
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
