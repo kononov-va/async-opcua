@@ -1,31 +1,55 @@
+use std::{
+    sync::{Arc, }, 
+    time::Duration,
+    collections::HashMap,
+};
 use async_trait::async_trait;
 
-use opcua::server::{
+use opcua_server::{
     node_manager::{
         memory::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
-            InMemoryNodeManagerImplBuilder,
+            InMemoryNodeManagerImplBuilder, 
         },
-        NodeManagersRef, ServerContext, NodeManagerBuilder,
+        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler, 
     },
     address_space::{read_node_value, write_node_value, AddressSpace},
 };
 
 use opcua::server::diagnostics::NamespaceMetadata;
+
 use opcua_nodes::{HasNodeId, NodeSetImport};
+use opcua_core::sync::RwLock;
+use opcua_types::{
+    AttributeId, DataValue, MonitoringMode, NodeClass, NodeId, NumericRange, StatusCode,
+    TimestampsToReturn, Variant,
+};
 
 // Node manager impl for the vzljot namespace.
 pub struct VzljotNodeManagerImpl {
+    write_cbs: RwLock<HashMap<NodeId, WriteCB>>,
+    read_cbs: RwLock<HashMap<NodeId, ReadCB>>,
+    method_cbs: RwLock<HashMap<NodeId, MethodCB>>,
     namespaces: Vec<NamespaceMetadata>,
     #[allow(unused)]
     node_managers: NodeManagersRef,
     name: String,
+    samplers: SyncSampler,
 }
 
 /// Node manager for the vzljot namespace.
 pub type VzljotNodeManager = InMemoryNodeManager<VzljotNodeManagerImpl>;
 
-/// Builder for the [VzljotNodeManager.
+type WriteCB = Arc<dyn Fn(DataValue, &NumericRange) -> StatusCode + Send + Sync + 'static>;
+type ReadCB = Arc<
+    dyn Fn(&NumericRange, TimestampsToReturn, f64) -> Result<DataValue, StatusCode>
+        + Send
+        + Sync
+        + 'static,
+>;
+type MethodCB = Arc<dyn Fn(&[Variant]) -> Result<Vec<Variant>, StatusCode> + Send + Sync + 'static>;
+
+/// Builder for the [VzljotNodeManager].
 pub struct VzljotNodeManagerBuilder{
     namespaces: Vec<NamespaceMetadata>,
     name: String,
@@ -40,6 +64,15 @@ impl VzljotNodeManagerBuilder {
             namespaces: vec![namespace],
             name: name.to_owned(),
             imports: Vec::new(),
+        }
+    }
+    /// Create a new simple node manager that imports from the given list
+    /// of [NodeSetImport]s.
+    pub fn new_imports(imports: Vec<Box<dyn NodeSetImport>>, name: &str) -> Self {
+        Self {
+            namespaces: Vec::new(),
+            imports,
+            name: name.to_owned(),
         }
     }
 }
@@ -80,7 +113,17 @@ pub fn vzljot_node_manager(namespace: NamespaceMetadata, name: &str) -> impl Nod
 #[async_trait]
 impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     async fn init(&self, _address_space: &mut AddressSpace, context: ServerContext) {
-
+        self.samplers.run(
+            Duration::from_millis(
+                context
+                    .info
+                    .config
+                    .limits
+                    .subscriptions
+                    .min_sampling_interval_ms as u64,
+            ),
+            context.subscriptions.clone(),
+        );
     }
     
    fn namespaces(&self) -> Vec<NamespaceMetadata> {
@@ -95,13 +138,13 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
 impl VzljotNodeManagerImpl {
     fn new(namespaces: Vec<NamespaceMetadata>, name: &str, node_managers: NodeManagersRef) -> Self {
         Self {
-            //write_cbs: Default::default(),
-            //read_cbs: Default::default(),
-            //method_cbs: Default::default(),
+            write_cbs: Default::default(),
+            read_cbs: Default::default(),
+            method_cbs: Default::default(),
             namespaces,
             name: name.to_owned(),
             node_managers,
-            //samplers: SyncSampler::new(),
+            samplers: SyncSampler::new(),
         }
     }
 }

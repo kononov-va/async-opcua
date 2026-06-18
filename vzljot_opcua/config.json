@@ -1,7 +1,7 @@
 {
     "server_config":{
         "application_name": "OPC UA Vzljot Server",
-        "application_uri": "urn:10.0.2.15",
+        "application_uri": "urn:opcua-Vzljot-Server",
         "product_uri": "urn:OPC UA Vzljot Server Testkit",
         "create_sample_keypair": true,
         "certificate_path": "own/cert.der", 

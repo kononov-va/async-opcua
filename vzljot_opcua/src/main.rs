@@ -3,7 +3,7 @@
 // Copyright (C) 2026
 
 //!OPC UA server for different flowmeters designed by developer "vzljot"
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::time::Duration;
 use std::{fs, io};
@@ -19,9 +19,9 @@ use opcua::{
     server::{ServerConfig, ServerBuilder, diagnostics::NamespaceMetadata, address_space},
 };
 
-use crate::VzljotNodeManager::vzljot_node_manager;
+use crate::vzljot_node_manager::VzljotNodeManager;
 
-mod VzljotNodeManager;
+mod vzljot_node_manager;
 
 struct Args {
     help: bool,
@@ -103,16 +103,17 @@ async fn main() {
         //println!("{:?}", config.server_config.endpoints);
         let (server, handle) = ServerBuilder::new()
             .with_config(config.server_config.clone())
-            .with_node_manager(vzljot_node_manager(
+            .with_node_manager(vzljot_node_manager::vzljot_node_manager(
                  NamespaceMetadata {
                     namespace_uri: "urn:VzljotServer".to_owned(),
                     ..Default::default()
                 }, "Vzljot"))
-            .build().unwrap();
+            .build()
+            .unwrap();
         
         let node_manager = handle
             .node_managers()
-            .get_of_type::<VzljotNodeManager::VzljotNodeManager>()
+            .get_of_type::<VzljotNodeManager>()
             .unwrap();
 
         let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();

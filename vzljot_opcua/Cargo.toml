@@ -13,7 +13,13 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 
+async-opcua-client = { path = "../async-opcua-client", optional = true, version = "0.18.0" }
+async-opcua-core = { path = "../async-opcua-core", version = "0.18.0" }
+async-opcua-core-namespace = { path = "../async-opcua-core-namespace", optional = true, version = "0.18.0" }
+async-opcua-crypto = { path = "../async-opcua-crypto", version = "0.18.0" }
 async-opcua-nodes = { path = "../async-opcua-nodes", version = "0.18.0" }
+async-opcua-types = { path = "../async-opcua-types", version = "0.18.0" }
+async-opcua-server = { path = "../async-opcua-server", version = "0.18.0" }
 
 [dependencies.async-opcua]
 path = "../async-opcua"

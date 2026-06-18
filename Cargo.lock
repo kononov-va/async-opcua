@@ -2869,7 +2869,13 @@ name = "vzljot_opcua"
 version = "0.1.0"
 dependencies = [
  "async-opcua",
+ "async-opcua-client",
+ "async-opcua-core",
+ "async-opcua-core-namespace",
+ "async-opcua-crypto",
  "async-opcua-nodes",
+ "async-opcua-server",
+ "async-opcua-types",
  "async-trait",
  "chrono",
  "pico-args",

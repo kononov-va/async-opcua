@@ -27,7 +27,7 @@ async fn main() {
     // Create an OPC UA server with sample configuration and default node set
 
     let (server, handle) = ServerBuilder::new()
-        .with_config_from("../server.conf")
+        .with_config_from("/home/slava/Project/rust_vzljot/async-opcua/samples/server.conf")
         .build_info(BuildInfo {
             product_uri: "https://github.com/freeopcua/async-opcua".into(),
             manufacturer_name: "Rust OPC-UA".into(),
