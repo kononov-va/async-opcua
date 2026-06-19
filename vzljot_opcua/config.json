@@ -110,8 +110,8 @@
                 "path": "/",
                 "security_policy": "Basic256",
                 "security_mode": "Sign",
-                "security_level": 3,
-                "password_security_policy": "None",
+                "security_level": 13,
+                "password_security_policy": "Basic256",
                 "user_token_ids":[
                     "ANONYMOUS",
                     "sample_password_user1",

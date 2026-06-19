@@ -119,13 +119,15 @@ async fn main() {
         let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();
 
         let test_node_id = node_id::NodeId::new(ns, "vzljot_test");
+        {
+            let mut addr = node_manager.address_space().write();
 
-        let mut addr = node_manager.address_space().write();
+            address_space::VariableBuilder::new(&test_node_id, "VzljotTestVariable", "VzljotVariable")
+                .data_type(types::generated::node_ids::DataTypeId::Int32)
+                .value(20)
+                .insert(&mut *addr);
 
-        address_space::VariableBuilder::new(&test_node_id, "VzljotTestVariable", "VzljotVariable")
-            .data_type(types::generated::node_ids::DataTypeId::Int32)
-            .value(20).insert(&mut *addr);
-
+        }
         //let test = request_device(&devices[0]).unwrap();
         server.run().await.unwrap();
     }

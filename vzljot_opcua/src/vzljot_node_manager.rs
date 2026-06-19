@@ -11,7 +11,7 @@ use opcua_server::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
             InMemoryNodeManagerImplBuilder, 
         },
-        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler, 
+        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler,
     },
     address_space::{read_node_value, write_node_value, AddressSpace},
 };
