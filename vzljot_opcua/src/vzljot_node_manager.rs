@@ -11,7 +11,8 @@ use opcua_server::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
             InMemoryNodeManagerImplBuilder, 
         },
-        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler,
+        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler, RequestContext, HistoryNode,
+        HistoryUpdateNode, HistoryResult,
     },
     address_space::{read_node_value, write_node_value, AddressSpace},
 };
@@ -21,8 +22,8 @@ use opcua::server::diagnostics::NamespaceMetadata;
 use opcua_nodes::{HasNodeId, NodeSetImport};
 use opcua_core::sync::RwLock;
 use opcua_types::{
-    AttributeId, DataValue, MonitoringMode, NodeClass, NodeId, NumericRange, StatusCode,
-    TimestampsToReturn, Variant,
+    AttributeId, DataTypeId::HistoryData, DataValue, MonitoringMode, NodeClass, NodeId, NumericRange, ReadAnnotationDataDetails, 
+    ReadAtTimeDetails, ReadEventDetails, ReadProcessedDetails, ReadRawModifiedDetails, StatusCode, TimestampsToReturn, Variant, 
 };
 
 // Node manager impl for the vzljot namespace.
@@ -133,6 +134,103 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     fn name(&self) -> &str {
         &self.name
     }
+
+    /// Perform the history read raw modified service. This should write results
+    /// to the `nodes` list of type either `HistoryData` or `HistoryModifiedData`
+    ///
+    /// Nodes are verified to be readable before this is called.
+    async fn history_read_raw_modified(
+        &self,
+        context: &RequestContext,
+        details: &ReadRawModifiedDetails,
+        nodes: &mut [&mut &mut HistoryNode],
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Result<(), StatusCode> {
+        let start = details.start_time.to_string();
+        let end = details.end_time.to_string();
+        let num_v = details.num_values_per_node;
+        let is_read = details.is_read_modified;
+        let bounds = details.return_bounds;
+        
+        for node in nodes{
+            let mut hd: opcua_types::HistoryData = opcua_types::HistoryData {
+                data_values: (Some(vec![DataValue::new_at(30, details.end_time)])) };
+
+            node.set_result(hd);
+        }
+        //let cnt = nodes.
+        //Err(StatusCode::BadHistoryOperationUnsupported)
+        Ok(())
+    }
+
+    /// Perform the history read processed service. This should write results
+    /// to the `nodes` list of type `HistoryData`.
+    ///
+    /// Nodes are verified to be readable before this is called.
+    async fn history_read_processed(
+        &self,
+        context: &RequestContext,
+        details: &ReadProcessedDetails,
+        nodes: &mut [&mut &mut HistoryNode],
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Result<(), StatusCode> {
+        Err(StatusCode::BadHistoryOperationUnsupported)
+    }
+
+    /// Perform the history read processed service. This should write results
+    /// to the `nodes` list of type `HistoryData`.
+    ///
+    /// Nodes are verified to be readable before this is called.
+    async fn history_read_at_time(
+        &self,
+        context: &RequestContext,
+        details: &ReadAtTimeDetails,
+        nodes: &mut [&mut &mut HistoryNode],
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Result<(), StatusCode> {
+        Err(StatusCode::BadHistoryOperationUnsupported)
+    }
+
+    /// Perform the history read events service. This should write results
+    /// to the `nodes` list of type `HistoryEvent`.
+    ///
+    /// Nodes are verified to be readable before this is called.
+    async fn history_read_events(
+        &self,
+        context: &RequestContext,
+        details: &ReadEventDetails,
+        nodes: &mut [&mut &mut HistoryNode],
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Result<(), StatusCode> {
+        Err(StatusCode::BadHistoryOperationUnsupported)
+    }
+
+    /// Perform the history read annotations data service. This should write
+    /// results to the `nodes` list of type `Annotation`.
+    ///
+    /// Nodes are verified to be readable before this is called.
+    async fn history_read_annotations(
+        &self,
+        context: &RequestContext,
+        details: &ReadAnnotationDataDetails,
+        nodes: &mut [&mut &mut HistoryNode],
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Result<(), StatusCode> {
+        Err(StatusCode::BadHistoryOperationUnsupported)
+    }
+
+    /// Perform the HistoryUpdate service. This should write result
+    /// status codes to the `nodes` list as appropriate.
+    ///
+    /// Nodes are verified to be writable before this is called.
+    async fn history_update(
+        &self,
+        context: &RequestContext,
+        nodes: &mut [&mut &mut HistoryUpdateNode],
+    ) -> Result<(), StatusCode> {
+        Err(StatusCode::BadHistoryOperationUnsupported)
+    }
+
 }
 
 impl VzljotNodeManagerImpl {

@@ -11,6 +11,7 @@ use std::path::PathBuf; //, sync::Arc}
 use chrono::{prelude::*};
 
 use opcua::types;
+use opcua_types::NodeId;
 //use opcua::xml::schema::opc_ua_types::NodeId;
 use rand::random;
 use serde::{Deserialize, Serialize};
@@ -118,11 +119,18 @@ async fn main() {
 
         let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();
 
-        let test_node_id = node_id::NodeId::new(ns, "vzljot_test");
         {
             let mut addr = node_manager.address_space().write();
 
-            address_space::VariableBuilder::new(&test_node_id, "VzljotTestVariable", "VzljotVariable")
+            let folder_id = NodeId::new(ns, "VzletVar");
+            addr.add_folder(&folder_id, "VzletVar", "VzletVar", &NodeId::objects_folder_id());
+
+            let test_node_id = node_id::NodeId::new(ns, "vzljot_test");
+
+            address_space::VariableBuilder::new(&test_node_id, "vzljot_test", "vzljot_test")
+                .history_readable()
+                .historizing(true)
+                .organized_by(&folder_id)
                 .data_type(types::generated::node_ids::DataTypeId::Int32)
                 .value(20)
                 .insert(&mut *addr);
