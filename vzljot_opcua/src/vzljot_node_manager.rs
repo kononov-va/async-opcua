@@ -6,15 +6,12 @@ use std::{
 use async_trait::async_trait;
 
 use opcua_server::{
-    node_manager::{
-        memory::{
+    address_space::{AddressSpace, read_node_value, write_node_value}, node_manager::{
+        HistoryNode, HistoryResult, HistoryUpdateNode, NodeManagerBuilder, NodeManagerCollection, NodeManagersRef, RequestContext, ServerContext, SyncSampler, memory::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
             InMemoryNodeManagerImplBuilder, 
         },
-        NodeManagersRef, ServerContext, NodeManagerBuilder, SyncSampler, RequestContext, HistoryNode,
-        HistoryUpdateNode, HistoryResult,
     },
-    address_space::{read_node_value, write_node_value, AddressSpace},
 };
 
 use opcua::server::diagnostics::NamespaceMetadata;
@@ -26,8 +23,10 @@ use opcua_types::{
     ReadAtTimeDetails, ReadEventDetails, ReadProcessedDetails, ReadRawModifiedDetails, StatusCode, TimestampsToReturn, Variant, 
 };
 
+use crate::Device;
+
 // Node manager impl for the vzljot namespace.
-pub struct VzljotNodeManagerImpl {
+pub struct VzljotNodeManagerImpl{
     write_cbs: RwLock<HashMap<NodeId, WriteCB>>,
     read_cbs: RwLock<HashMap<NodeId, ReadCB>>,
     method_cbs: RwLock<HashMap<NodeId, MethodCB>>,
@@ -36,6 +35,7 @@ pub struct VzljotNodeManagerImpl {
     node_managers: NodeManagersRef,
     name: String,
     samplers: SyncSampler,
+    device: Device,
 }
 
 /// Node manager for the vzljot namespace.
@@ -55,25 +55,28 @@ pub struct VzljotNodeManagerBuilder{
     namespaces: Vec<NamespaceMetadata>,
     name: String,
     imports: Vec<Box<dyn NodeSetImport>>,
+    device: Device,
 }
 
-impl VzljotNodeManagerBuilder {
+impl VzljotNodeManagerBuilder{
     /// Create a new Vzljot node manager builder with the given namespace
     /// and name.
-    pub fn new(namespace: NamespaceMetadata, name: &str) -> Self {
+    pub fn new(namespace: NamespaceMetadata, name: &str, device: Device) -> Self {
         Self {
             namespaces: vec![namespace],
             name: name.to_owned(),
             imports: Vec::new(),
+            device: device,
         }
     }
     /// Create a new simple node manager that imports from the given list
     /// of [NodeSetImport]s.
-    pub fn new_imports(imports: Vec<Box<dyn NodeSetImport>>, name: &str) -> Self {
+    pub fn new_imports(imports: Vec<Box<dyn NodeSetImport>>, name: &str, device: Device) -> Self {
         Self {
             namespaces: Vec::new(),
             imports,
             name: name.to_owned(),
+            device: device,
         }
     }
 }
@@ -103,12 +106,12 @@ impl InMemoryNodeManagerImplBuilder for VzljotNodeManagerBuilder {
         for ns in &self.namespaces {
             address_space.add_namespace(&ns.namespace_uri, ns.namespace_index);
         }          
-        VzljotNodeManagerImpl::new(self.namespaces, &self.name, context.node_managers.clone())
+        VzljotNodeManagerImpl::new(self.namespaces, &self.name, context.node_managers.clone(), self.device)
     }
 }
 
-pub fn vzljot_node_manager(namespace: NamespaceMetadata, name: &str) -> impl NodeManagerBuilder {
-    InMemoryNodeManagerBuilder::new(VzljotNodeManagerBuilder::new(namespace, name))
+pub fn vzljot_node_manager(namespace: NamespaceMetadata, name: &str, device: Device) -> impl NodeManagerBuilder +use<>{
+    InMemoryNodeManagerBuilder::new(VzljotNodeManagerBuilder::new(namespace, name, device))
 }
 
 #[async_trait]
@@ -152,11 +155,13 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
         let is_read = details.is_read_modified;
         let bounds = details.return_bounds;
         
+        let ip = self.device.device_ip_address.clone();
         for node in nodes{
             let mut hd: opcua_types::HistoryData = opcua_types::HistoryData {
-                data_values: (Some(vec![DataValue::new_at(30, details.end_time)])) };
+                data_values: (Some(vec![DataValue::new_at(30, details.end_time), DataValue::new_at(40, details.start_time)])) };
 
             node.set_result(hd);
+            node.set_status(StatusCode::Good);
         }
         //let cnt = nodes.
         //Err(StatusCode::BadHistoryOperationUnsupported)
@@ -233,8 +238,8 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
 
 }
 
-impl VzljotNodeManagerImpl {
-    fn new(namespaces: Vec<NamespaceMetadata>, name: &str, node_managers: NodeManagersRef) -> Self {
+impl VzljotNodeManagerImpl{
+    fn new(namespaces: Vec<NamespaceMetadata>, name: &str, node_managers: NodeManagersRef, device: Device) -> Self {
         Self {
             write_cbs: Default::default(),
             read_cbs: Default::default(),
@@ -243,6 +248,7 @@ impl VzljotNodeManagerImpl {
             name: name.to_owned(),
             node_managers,
             samplers: SyncSampler::new(),
+            device: device,
         }
     }
 }

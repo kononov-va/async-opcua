@@ -5,6 +5,7 @@
 //!OPC UA server for different flowmeters designed by developer "vzljot"
 //use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::ops::Deref;
 use std::time::Duration;
 use std::{fs, io};
 use std::path::PathBuf; //, sync::Arc}
@@ -69,13 +70,13 @@ Usage:
 }
 
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 enum DeviceType {
     LiteM,
     URSV5xx,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 struct Device {
     device_ip_address: String,
     device_address: u8,
@@ -101,62 +102,70 @@ async fn main() {
             let cf = fs::read_to_string(args.config_path).expect("Config file not found");
             serde_json::from_str(&cf).unwrap()
         };
-        //println!("{:?}", config.server_config.endpoints);
-        let (server, handle) = ServerBuilder::new()
-            .with_config(config.server_config.clone())
-            .with_node_manager(vzljot_node_manager::vzljot_node_manager(
+
+        let mut server_builder = ServerBuilder::new().with_config(config.server_config.clone());
+        for device in &config.devices{
+            server_builder = server_builder.with_node_manager(vzljot_node_manager::vzljot_node_manager(
                  NamespaceMetadata {
                     namespace_uri: "urn:VzljotServer".to_owned(),
                     ..Default::default()
-                }, "Vzljot"))
+            }, device.device_name.as_str(), device.clone()));
+        }
+        //println!("{:?}", config.server_config.endpoints);
+        let (server, handle) = server_builder
             .build()
             .unwrap();
         
-        let node_manager = handle
-            .node_managers()
-            .get_of_type::<VzljotNodeManager>()
-            .unwrap();
-
         let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();
 
-        {
-            let mut addr = node_manager.address_space().write();
+        for device in &config.devices {
 
-            let folder_id = NodeId::new(ns, "VzletVar");
-            addr.add_folder(&folder_id, "VzletVar", "VzletVar", &NodeId::objects_folder_id());
+            let node_manager = handle
+                .node_managers()
+                .get_by_name::<VzljotNodeManager>(device.device_name.as_str())
+                //.get_of_type::<VzljotNodeManager>()
+                .unwrap();
 
-            let test_node_id = node_id::NodeId::new(ns, "vzljot_test");
+            {
+                let mut addr = node_manager.address_space().write();
 
-            address_space::VariableBuilder::new(&test_node_id, "vzljot_test", "vzljot_test")
-                .history_readable()
-                .historizing(true)
-                .organized_by(&folder_id)
-                .data_type(types::generated::node_ids::DataTypeId::Int32)
-                .value(20)
-                .insert(&mut *addr);
+                let folder_id = NodeId::new(ns, device.device_name.clone());
+                addr.add_folder(&folder_id, device.device_name.clone(), 
+                    device.device_name.clone(), &NodeId::objects_folder_id());
 
+                let v_node_id = node_id::NodeId::new(ns, "V");
+
+                address_space::VariableBuilder::new(&v_node_id, "V", "V")
+                    .history_readable()
+                    .historizing(true)
+                    .organized_by(&folder_id)
+                    .data_type(types::generated::node_ids::DataTypeId::Double)
+                    .value(device.device_address)
+                    .insert(&mut *addr);
+
+                let q_node_id = node_id::NodeId::new(ns, "Q");
+
+                address_space::VariableBuilder::new(&q_node_id, "Q", "Q")
+                    .organized_by(&folder_id)
+                    .data_type(types::generated::node_ids::DataTypeId::Double)
+                    .value(device.device_address)
+                    .insert(&mut *addr);              
+            }
         }
         //let test = request_device(&devices[0]).unwrap();
         server.run().await.unwrap();
     }
 }
 
-fn request_device(device: &Device) -> Result<String, io::Error> {
+fn get_device_current_value(device: &Device) -> Result<data_value::DataValue, io::Error> {
     match device.device_type {
         DeviceType::LiteM => {
-            let st; 
-            match request_lite_m(device) {
-                Ok(answ) => {st = format!("{:?}", answ); 
-                    let arc = match request_lite_m_arch(device, 
-                        chrono::Local::now().checked_sub_signed(chrono::Duration::hours(1)).unwrap()) {
-                        Ok(answ) => Ok(answ),
-                        Err(e) => Err(e)
-                    };
-                    Ok(format!("current {} archive {:?}", st, arc))},
+             match request_lite_m(device) {
+                Ok(answ) => Ok(answ),
                 Err(e) => Err(e),
             }       
         },
-        DeviceType::URSV5xx => Ok("URSV".to_string()),
+        DeviceType::URSV5xx => Err(io::ErrorKind::AddrNotAvailable.into()),
     }
 }
 
@@ -180,7 +189,7 @@ fn request_lite_m(device_lite_m: &Device) -> Result<data_value::DataValue, io::E
     }
 }
 
-fn request_lite_m_arch(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>) -> Result<data_value::DataValue, io::Error> {
+fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>) -> Result<data_value::DataValue, io::Error> {
     let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
