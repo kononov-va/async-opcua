@@ -176,7 +176,7 @@
 
     "devices":[
         {
-            "device_ip_address": "127.0.0.1",
+            "device_ip_address": "127.0.0.1:502",
             "device_address": 1,
             "device_type": "LiteM",
             "device_name": "test",
@@ -184,7 +184,7 @@
             "read_timeout": 100
         },
         {
-            "device_ip_address": "127.0.0.1",
+            "device_ip_address": "127.0.0.1:502",
             "device_address": 2,
             "device_type": "LiteM",
             "device_name": "test1",

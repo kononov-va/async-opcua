@@ -6,8 +6,11 @@ use std::{
 use async_trait::async_trait;
 
 use opcua_server::{
-    address_space::{AddressSpace, read_node_value, write_node_value}, node_manager::{
-        HistoryNode, HistoryResult, HistoryUpdateNode, NodeManagerBuilder, NodeManagerCollection, NodeManagersRef, RequestContext, ServerContext, SyncSampler, memory::{
+    address_space::{AddressSpace, read_node_value, write_node_value}, 
+    node_manager::{
+        HistoryNode, HistoryResult, HistoryUpdateNode, NodeManagerBuilder, NodeManagerCollection, NodeManagersRef, RequestContext, 
+        ServerContext, SyncSampler, ParsedReadValueId, 
+        memory::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
             InMemoryNodeManagerImplBuilder, 
         },
@@ -17,6 +20,7 @@ use opcua_server::{
 use opcua::server::diagnostics::NamespaceMetadata;
 
 use opcua_nodes::{HasNodeId, NodeSetImport};
+use opcua_core::{trace_read_lock, trace_write_lock};
 use opcua_core::sync::RwLock;
 use opcua_types::{
     AttributeId, DataTypeId::HistoryData, DataValue, MonitoringMode, NodeClass, NodeId, NumericRange, ReadAnnotationDataDetails, 
@@ -138,6 +142,32 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
         &self.name
     }
 
+    async fn read_values(
+        &self,
+        context: &RequestContext,
+        address_space: &RwLock<AddressSpace>,
+        nodes: &[&ParsedReadValueId],
+        max_age: f64,
+        timestamps_to_return: TimestampsToReturn,
+    ) -> Vec<DataValue> {
+        let address_space = address_space.read();
+        let cbs = trace_read_lock!(self.read_cbs);
+
+        nodes
+            .iter()
+            .map(|n| {
+                self.read_node_value(
+                    &cbs,
+                    context,
+                    &address_space,
+                    n,
+                    max_age,
+                    timestamps_to_return,
+                )
+            })
+            .collect()
+    }
+
     /// Perform the history read raw modified service. This should write results
     /// to the `nodes` list of type either `HistoryData` or `HistoryModifiedData`
     ///
@@ -149,22 +179,16 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
         nodes: &mut [&mut &mut HistoryNode],
         timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
-        let start = details.start_time.to_string();
-        let end = details.end_time.to_string();
         let num_v = details.num_values_per_node;
-        let is_read = details.is_read_modified;
-        let bounds = details.return_bounds;
         
-        let ip = self.device.device_ip_address.clone();
         for node in nodes{
-            let mut hd: opcua_types::HistoryData = opcua_types::HistoryData {
-                data_values: (Some(vec![DataValue::new_at(30, details.end_time), DataValue::new_at(40, details.start_time)])) };
+            let hd: opcua_types::HistoryData = opcua_types::HistoryData {
+                data_values: crate::request_lite_m_arhive_period(&self.device, details.start_time, details.end_time, 
+                    timestamps_to_return, details.return_bounds) };
 
             node.set_result(hd);
             node.set_status(StatusCode::Good);
         }
-        //let cnt = nodes.
-        //Err(StatusCode::BadHistoryOperationUnsupported)
         Ok(())
     }
 
@@ -250,5 +274,55 @@ impl VzljotNodeManagerImpl{
             samplers: SyncSampler::new(),
             device: device,
         }
+    }
+
+    fn read_node_value(
+        &self,
+        cbs: &HashMap<NodeId, ReadCB>,
+        context: &RequestContext,
+        address_space: &AddressSpace,
+        node_to_read: &ParsedReadValueId,
+        max_age: f64,
+        timestamps_to_return: TimestampsToReturn,
+    ) -> DataValue {
+        let mut result_value = DataValue::null();
+        // Check that the read is permitted.
+        let node = match address_space.validate_node_read(context, node_to_read) {
+            Ok(n) => n,
+            Err(e) => {
+                result_value.status = Some(e);
+                return result_value;
+            }
+        };
+
+        // If there is a callback registered, call that, otherwise read it from the node hierarchy.
+        if let Some(cb) = cbs.get(&node_to_read.node_id) {
+            match cb(&node_to_read.index_range, timestamps_to_return, max_age) {
+                Err(e) => DataValue {
+                    status: Some(e),
+                    ..Default::default()
+                },
+                Ok(v) => v,
+            }
+        } else {
+            // If it can't be found, read it from the node hierarchy.
+            read_node_value(node, context, node_to_read, max_age, timestamps_to_return)
+        }
+    }
+
+    pub fn add_read_callback(
+        &self,
+        id: NodeId,
+        cb: impl Fn(&NumericRange, TimestampsToReturn, f64) -> Result<DataValue, StatusCode>
+            + Send
+            + Sync
+            + 'static,
+    ) {
+        let mut cbs = trace_write_lock!(self.read_cbs);
+        cbs.insert(id, Arc::new(cb));
+    }
+
+    pub fn get_device(&self) -> Device {
+        self.device.clone()
     }
 }

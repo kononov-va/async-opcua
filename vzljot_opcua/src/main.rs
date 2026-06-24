@@ -5,19 +5,20 @@
 //!OPC UA server for different flowmeters designed by developer "vzljot"
 //use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::ops::Deref;
+use std::ops::{Add, Deref, Sub};
 use std::time::Duration;
-use std::{fs, io};
+use std::{fs, io, vec};
 use std::path::PathBuf; //, sync::Arc}
 use chrono::{prelude::*};
 
 use opcua::types;
+use opcua_types::DataTypeId::{StatusCode, UtcTime};
 use opcua_types::NodeId;
 //use opcua::xml::schema::opc_ua_types::NodeId;
 use rand::random;
 use serde::{Deserialize, Serialize};
 use opcua::{
-    types::{DateTime, data_value, node_id},
+    types::{DateTime, data_value, node_id, TimestampsToReturn},
     server::{ServerConfig, ServerBuilder, diagnostics::NamespaceMetadata, address_space},
 };
 
@@ -107,7 +108,7 @@ async fn main() {
         for device in &config.devices{
             server_builder = server_builder.with_node_manager(vzljot_node_manager::vzljot_node_manager(
                  NamespaceMetadata {
-                    namespace_uri: "urn:VzljotServer".to_owned(),
+                    namespace_uri: format!("urn:VzljotServer_{}", device.device_name).as_str().to_owned(),
                     ..Default::default()
             }, device.device_name.as_str(), device.clone()));
         }
@@ -115,10 +116,10 @@ async fn main() {
         let (server, handle) = server_builder
             .build()
             .unwrap();
-        
-        let ns = handle.get_namespace_index("urn:VzljotServer").unwrap();
 
         for device in &config.devices {
+
+            let ns = handle.get_namespace_index(format!("urn:VzljotServer_{}", device.device_name).as_str()).unwrap();
 
             let node_manager = handle
                 .node_managers()
@@ -147,20 +148,28 @@ async fn main() {
 
                 address_space::VariableBuilder::new(&q_node_id, "Q", "Q")
                     .organized_by(&folder_id)
-                    .data_type(types::generated::node_ids::DataTypeId::Double)
-                    .value(device.device_address)
+                    .data_type(types::generated::node_ids::DataTypeId::Float)
+                    .value(0)
                     .insert(&mut *addr);              
+
+                let dv = node_manager.inner().get_device();
+                node_manager.inner().add_read_callback(q_node_id.clone(), move |_, time_stamp, _| {
+                    match get_device_current_value(&dv, time_stamp) {
+                        Ok(vl) => Ok(vl),
+                        Err(_) => Ok(data_value::DataValue::new_now_status(0, opcua_types::StatusCode::BadCommunicationError)),
+                    }
+                });
             }
         }
-        //let test = request_device(&devices[0]).unwrap();
+
         server.run().await.unwrap();
     }
 }
 
-fn get_device_current_value(device: &Device) -> Result<data_value::DataValue, io::Error> {
+fn get_device_current_value(device: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     match device.device_type {
         DeviceType::LiteM => {
-             match request_lite_m(device) {
+             match request_lite_m(device, time_stamp) {
                 Ok(answ) => Ok(answ),
                 Err(e) => Err(e),
             }       
@@ -169,7 +178,7 @@ fn get_device_current_value(device: &Device) -> Result<data_value::DataValue, io
     }
 }
 
-fn request_lite_m(device_lite_m: &Device) -> Result<data_value::DataValue, io::Error> {
+fn request_lite_m(device_lite_m: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0xC0, 0x08, 0, 0x02];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
@@ -184,9 +193,68 @@ fn request_lite_m(device_lite_m: &Device) -> Result<data_value::DataValue, io::E
  
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
-        Ok(_) => Ok(data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))),
+        Ok(_) => {
+            let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]));
+            dv.set_timestamps(time_stamp, 
+                opcua_types::DateTime::from(Utc::now()), 
+                opcua_types::DateTime::from(Utc::now()));
+            Ok(dv)
+        },
         Err(e) => Err(e),
     }
+}
+
+fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types::UtcTime,
+    end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, bounds: bool) -> Option<Vec<opcua::types::data_value::DataValue>> {
+    
+    let mut result: Vec<opcua::types::data_value::DataValue> = Vec::new();
+
+    match get_period(start, end, bounds) {
+        Some(period) => {
+            for time in period {
+                let answer = match request_lite_m_at_time(device, chrono::DateTime::<Local>::from(time.as_chrono())) {
+                    Ok(mut v) => {v.set_timestamps(time_stamp, time, time);
+                        v
+                    },
+                    Err(e) => {let mut v = opcua::types::data_value::DataValue::new_at_status(0, time, 
+                            opcua_types::StatusCode::BadCommunicationError);
+                        v.set_timestamps(time_stamp, time, time);
+                        v
+                    },
+                };
+                result.push(answer);
+            };
+            Some(result)
+        },
+        None => None,
+    }
+}
+
+fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_types::UtcTime, 
+    bounds: bool) -> Option<Vec<opcua::types::data_types::UtcTime>> {
+    
+    let mut result: Vec<opcua::types::data_types::UtcTime> = Vec::new();
+
+    if start >= end {
+        return None
+    }
+
+    let mut time = start;
+    if bounds {
+        time = start.sub(chrono::Duration::hours(1));
+    }
+    while time < end {
+        time = time.sub(chrono::Duration::hours(1));
+
+        result.push(time);
+    }
+    if bounds {
+        result.push(end);
+    }
+    if result.len() == 0 {
+        return None
+    }
+    Some(result)
 }
 
 fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>) -> Result<data_value::DataValue, io::Error> {
