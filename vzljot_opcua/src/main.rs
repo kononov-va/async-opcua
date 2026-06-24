@@ -194,7 +194,7 @@ fn request_lite_m(device_lite_m: &Device, time_stamp: TimestampsToReturn) -> Res
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]));
+            let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])*0.06);
             dv.set_timestamps(time_stamp, 
                 opcua_types::DateTime::from(Utc::now()), 
                 opcua_types::DateTime::from(Utc::now()));
@@ -205,15 +205,18 @@ fn request_lite_m(device_lite_m: &Device, time_stamp: TimestampsToReturn) -> Res
 }
 
 fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types::UtcTime,
-    end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, bounds: bool) -> Option<Vec<opcua::types::data_value::DataValue>> {
+    end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, 
+    bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode) {
     
     let mut result: Vec<opcua::types::data_value::DataValue> = Vec::new();
+    let mut status_result = opcua_types::StatusCode::BadCommunicationError;
 
-    match get_period(start, end, bounds) {
+    match get_period(start, end, bounds, num_values_per_node) {
         Some(period) => {
             for time in period {
                 let answer = match request_lite_m_at_time(device, chrono::DateTime::<Local>::from(time.as_chrono())) {
                     Ok(mut v) => {v.set_timestamps(time_stamp, time, time);
+                        status_result = opcua_types::StatusCode::Good;
                         v
                     },
                     Err(e) => {let mut v = opcua::types::data_value::DataValue::new_at_status(0, time, 
@@ -224,14 +227,14 @@ fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types
                 };
                 result.push(answer);
             };
-            Some(result)
+            (Some(result), status_result)
         },
-        None => None,
+        None => (None, status_result),
     }
 }
 
 fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_types::UtcTime, 
-    bounds: bool) -> Option<Vec<opcua::types::data_types::UtcTime>> {
+    bounds: bool, num_values_per_node: u32) -> Option<Vec<opcua::types::data_types::UtcTime>> {
     
     let mut result: Vec<opcua::types::data_types::UtcTime> = Vec::new();
 
@@ -253,6 +256,12 @@ fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_
     }
     if result.len() == 0 {
         return None
+    }
+    let sz = match usize::try_from(num_values_per_node) {
+        Ok(v) => v,
+        Err(_) => 0,} ;
+    if result.len() >= sz{
+        result.truncate(sz);
     }
     Some(result)
 }

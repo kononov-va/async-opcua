@@ -174,22 +174,22 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be readable before this is called.
     async fn history_read_raw_modified(
         &self,
-        context: &RequestContext,
+        _context: &RequestContext,
         details: &ReadRawModifiedDetails,
         nodes: &mut [&mut &mut HistoryNode],
         timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
-        let num_v = details.num_values_per_node;
-        
-        for node in nodes{
-            let hd: opcua_types::HistoryData = opcua_types::HistoryData {
-                data_values: crate::request_lite_m_arhive_period(&self.device, details.start_time, details.end_time, 
-                    timestamps_to_return, details.return_bounds) };
-
-            node.set_result(hd);
-            node.set_status(StatusCode::Good);
+        if details.is_read_modified == false {        
+            for node in nodes{
+                let (hdv, status_node) = 
+                    crate::request_lite_m_arhive_period(&self.device, details.start_time, details.end_time, 
+                        timestamps_to_return, details.return_bounds, details.num_values_per_node);
+                node.set_result(opcua_types::HistoryData {data_values: hdv});
+                node.set_status(status_node);
+            }
+            return Ok(())
         }
-        Ok(())
+        Err(StatusCode::BadHistoryOperationUnsupported)
     }
 
     /// Perform the history read processed service. This should write results
