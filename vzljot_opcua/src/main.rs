@@ -6,6 +6,7 @@
 //use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::ops::{Add, Deref, Sub};
+use std::thread::sleep;
 use std::time::Duration;
 use std::{fs, io, vec};
 use std::path::PathBuf; //, sync::Arc}
@@ -16,7 +17,7 @@ use opcua_types::DataTypeId::{StatusCode, UtcTime};
 use opcua_types::NodeId;
 //use opcua::xml::schema::opc_ua_types::NodeId;
 use rand::random;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use opcua::{
     types::{DateTime, data_value, node_id, TimestampsToReturn},
     server::{ServerConfig, ServerBuilder, diagnostics::NamespaceMetadata, address_space},
@@ -85,6 +86,7 @@ struct Device {
     device_name: String,
     connection_timeout: u64,
     read_timeout: u64,
+    history_read_await: u64,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -204,6 +206,17 @@ fn request_lite_m(device_lite_m: &Device, time_stamp: TimestampsToReturn) -> Res
     }
 }
 
+fn request_period(device: &Device, start: opcua::types::data_types::UtcTime,
+    end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, 
+    bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode) {
+    match device.device_type {
+        DeviceType::LiteM => {
+            request_lite_m_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
+        },
+        DeviceType::URSV5xx => (None, opcua_types::StatusCode::BadCommunicationError),
+    }
+}
+
 fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types::UtcTime,
     end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, 
     bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode) {
@@ -214,9 +227,14 @@ fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types
     match get_period(start, end, bounds, num_values_per_node) {
         Some(period) => {
             for time in period {
-                let answer = match request_lite_m_at_time(device, chrono::DateTime::<Local>::from(time.as_chrono())) {
-                    Ok(mut v) => {v.set_timestamps(time_stamp, time, time);
-                        status_result = opcua_types::StatusCode::Good;
+                let answer = match request_lite_m_at_time(device, chrono::DateTime::<Local>::from(time.as_chrono()), time_stamp) {
+                    Ok(mut v) => {
+                        if v.source_timestamp.unwrap() == opcua_types::DateTime::from(
+                            chrono::DateTime::from_timestamp_secs(0).unwrap()) {
+                                v.status = Some(opcua_types::StatusCode::BadNoData);
+                        } else {
+                            status_result = opcua_types::StatusCode::Good;
+                        }
                         v
                     },
                     Err(e) => {let mut v = opcua::types::data_value::DataValue::new_at_status(0, time, 
@@ -226,6 +244,7 @@ fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types
                     },
                 };
                 result.push(answer);
+                sleep(Duration::from_millis(device.history_read_await));
             };
             (Some(result), status_result)
         },
@@ -247,7 +266,7 @@ fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_
         time = start.sub(chrono::Duration::hours(1));
     }
     while time < end {
-        time = time.sub(chrono::Duration::hours(1));
+        time = time.add(chrono::Duration::hours(1));
 
         result.push(time);
     }
@@ -266,7 +285,7 @@ fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_
     Some(result)
 }
 
-fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>) -> Result<data_value::DataValue, io::Error> {
+fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
@@ -286,8 +305,13 @@ fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime
     let mut answer: [u8; 40]= [0; 40];
     match str.read(&mut answer) {
         Ok(_) => {
-              Ok(data_value::DataValue::new_at( get_lite_m_volume(&answer[13..29]), 
-                DateTime::from(chrono::DateTime::from_timestamp_secs(i64::from(u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))).unwrap())))
+            let t = chrono::DateTime::from_timestamp_secs(i64::from(
+                u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))).unwrap().with_timezone(&Local);//.sub(Local::now().offset().fix());
+            let mut val = data_value::DataValue::value_only( get_lite_m_volume(&answer[13..29]));
+            val.set_timestamps(time_stamp, 
+                opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), 
+                opcua_types::DateTime::from(Utc::now()));
+            Ok(val)
         }
         Err(e) => Err(e),
     }    
