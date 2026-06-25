@@ -228,16 +228,11 @@ fn request_lite_m_arhive_period(device: &Device, start: opcua::types::data_types
         Some(period) => {
             for time in period {
                 let answer = match request_lite_m_at_time(device, chrono::DateTime::<Local>::from(time.as_chrono()), time_stamp) {
-                    Ok(mut v) => {
-                        if v.source_timestamp.unwrap() == opcua_types::DateTime::from(
-                            chrono::DateTime::from_timestamp_secs(0).unwrap()) {
-                                v.status = Some(opcua_types::StatusCode::BadNoData);
-                        } else {
-                            status_result = opcua_types::StatusCode::Good;
-                        }
+                    Ok(v) => {
+                        status_result = opcua_types::StatusCode::Good;
                         v
                     },
-                    Err(e) => {let mut v = opcua::types::data_value::DataValue::new_at_status(0, time, 
+                    Err(_) => {let mut v = opcua::types::data_value::DataValue::new_at_status(0, time, 
                             opcua_types::StatusCode::BadCommunicationError);
                         v.set_timestamps(time_stamp, time, time);
                         v
@@ -305,11 +300,17 @@ fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime
     let mut answer: [u8; 40]= [0; 40];
     match str.read(&mut answer) {
         Ok(_) => {
-            let t = chrono::DateTime::from_timestamp_secs(i64::from(
-                u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]))).unwrap().with_timezone(&Local);//.sub(Local::now().offset().fix());
-            let mut val = data_value::DataValue::value_only( get_lite_m_volume(&answer[13..29]));
+            let mut staus_code = opcua_types::StatusCode::Good;
+            let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
+            if time_source == 0 {
+                staus_code = opcua_types::StatusCode::BadNoData;
+            }
+            let t = chrono::DateTime::from_timestamp_secs(i64::from(time_source))
+                .unwrap().with_timezone(&Local);//.sub(Local::now().offset().fix());
+            let mut val = data_value::DataValue::new_at_status( get_lite_m_volume(&answer[13..29]), 
+                opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), staus_code);
             val.set_timestamps(time_stamp, 
-                opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), 
+                val.source_timestamp.unwrap(), 
                 opcua_types::DateTime::from(Utc::now()));
             Ok(val)
         }

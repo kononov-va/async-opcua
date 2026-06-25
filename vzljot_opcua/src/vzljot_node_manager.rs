@@ -179,7 +179,6 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
         nodes: &mut [&mut &mut HistoryNode],
         timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
-        println!("{:?} {:?}", details.start_time, details.end_time);
         if details.is_read_modified == false {        
             for node in nodes{
                 let (hdv, status_node) = 
