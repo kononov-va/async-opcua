@@ -6,9 +6,9 @@ use std::{
 use async_trait::async_trait;
 
 use opcua_server::{
-    address_space::{AddressSpace, read_node_value, write_node_value}, 
+    address_space::{AddressSpace, read_node_value},// write_node_value}, 
     node_manager::{
-        HistoryNode, HistoryResult, HistoryUpdateNode, NodeManagerBuilder, NodeManagerCollection, NodeManagersRef, RequestContext, 
+        HistoryNode, HistoryUpdateNode, NodeManagerBuilder, NodeManagersRef, RequestContext, 
         ServerContext, SyncSampler, ParsedReadValueId, 
         memory::{
             InMemoryNodeManager, InMemoryNodeManagerBuilder, InMemoryNodeManagerImpl,
@@ -19,21 +19,21 @@ use opcua_server::{
 
 use opcua::server::diagnostics::NamespaceMetadata;
 
-use opcua_nodes::{HasNodeId, NodeSetImport};
+use opcua_nodes::NodeSetImport;
 use opcua_core::{trace_read_lock, trace_write_lock};
 use opcua_core::sync::RwLock;
 use opcua_types::{
-    AttributeId, DataTypeId::HistoryData, DataValue, MonitoringMode, NodeClass, NodeId, NumericRange, ReadAnnotationDataDetails, 
-    ReadAtTimeDetails, ReadEventDetails, ReadProcessedDetails, ReadRawModifiedDetails, StatusCode, TimestampsToReturn, Variant, 
+    DataValue, NodeId, NumericRange, ReadAnnotationDataDetails, 
+    ReadAtTimeDetails, ReadEventDetails, ReadProcessedDetails, ReadRawModifiedDetails, StatusCode, TimestampsToReturn, 
 };
 
 use crate::Device;
 
 // Node manager impl for the vzljot namespace.
-pub struct VzljotNodeManagerImpl{
-    write_cbs: RwLock<HashMap<NodeId, WriteCB>>,
+pub(crate) struct VzljotNodeManagerImpl{
+    //write_cbs: RwLock<HashMap<NodeId, WriteCB>>,
     read_cbs: RwLock<HashMap<NodeId, ReadCB>>,
-    method_cbs: RwLock<HashMap<NodeId, MethodCB>>,
+    //method_cbs: RwLock<HashMap<NodeId, MethodCB>>,
     namespaces: Vec<NamespaceMetadata>,
     #[allow(unused)]
     node_managers: NodeManagersRef,
@@ -43,19 +43,19 @@ pub struct VzljotNodeManagerImpl{
 }
 
 /// Node manager for the vzljot namespace.
-pub type VzljotNodeManager = InMemoryNodeManager<VzljotNodeManagerImpl>;
+pub(crate) type VzljotNodeManager = InMemoryNodeManager<VzljotNodeManagerImpl>;
 
-type WriteCB = Arc<dyn Fn(DataValue, &NumericRange) -> StatusCode + Send + Sync + 'static>;
+//type WriteCB = Arc<dyn Fn(DataValue, &NumericRange) -> StatusCode + Send + Sync + 'static>;
 type ReadCB = Arc<
     dyn Fn(&NumericRange, TimestampsToReturn, f64) -> Result<DataValue, StatusCode>
         + Send
         + Sync
         + 'static,
 >;
-type MethodCB = Arc<dyn Fn(&[Variant]) -> Result<Vec<Variant>, StatusCode> + Send + Sync + 'static>;
+//type MethodCB = Arc<dyn Fn(&[Variant]) -> Result<Vec<Variant>, StatusCode> + Send + Sync + 'static>;
 
 /// Builder for the [VzljotNodeManager].
-pub struct VzljotNodeManagerBuilder{
+pub(crate) struct VzljotNodeManagerBuilder{
     namespaces: Vec<NamespaceMetadata>,
     name: String,
     imports: Vec<Box<dyn NodeSetImport>>,
@@ -65,21 +65,11 @@ pub struct VzljotNodeManagerBuilder{
 impl VzljotNodeManagerBuilder{
     /// Create a new Vzljot node manager builder with the given namespace
     /// and name.
-    pub fn new(namespace: NamespaceMetadata, name: &str, device: Device) -> Self {
+    pub(crate) fn new(namespace: NamespaceMetadata, name: &str, device: Device) -> Self {
         Self {
             namespaces: vec![namespace],
             name: name.to_owned(),
             imports: Vec::new(),
-            device: device,
-        }
-    }
-    /// Create a new simple node manager that imports from the given list
-    /// of [NodeSetImport]s.
-    pub fn new_imports(imports: Vec<Box<dyn NodeSetImport>>, name: &str, device: Device) -> Self {
-        Self {
-            namespaces: Vec::new(),
-            imports,
-            name: name.to_owned(),
             device: device,
         }
     }
@@ -114,7 +104,7 @@ impl InMemoryNodeManagerImplBuilder for VzljotNodeManagerBuilder {
     }
 }
 
-pub fn vzljot_node_manager(namespace: NamespaceMetadata, name: &str, device: Device) -> impl NodeManagerBuilder +use<>{
+pub(crate) fn vzljot_node_manager(namespace: NamespaceMetadata, name: &str, device: Device) -> impl NodeManagerBuilder +use<>{
     InMemoryNodeManagerBuilder::new(VzljotNodeManagerBuilder::new(namespace, name, device))
 }
 
@@ -182,7 +172,7 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
         if details.is_read_modified == false {        
             for node in nodes{
                 let (hdv, status_node) = 
-                    crate::request_period(&self.device, details.start_time, details.end_time, 
+                    crate::lite_m::request_period(&self.device, details.start_time, details.end_time, 
                         timestamps_to_return, details.return_bounds, details.num_values_per_node);
                 node.set_result(opcua_types::HistoryData {data_values: hdv});
                 node.set_status(status_node);
@@ -198,10 +188,10 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be readable before this is called.
     async fn history_read_processed(
         &self,
-        context: &RequestContext,
-        details: &ReadProcessedDetails,
-        nodes: &mut [&mut &mut HistoryNode],
-        timestamps_to_return: TimestampsToReturn,
+        _context: &RequestContext,
+        _details: &ReadProcessedDetails,
+        _nodes: &mut [&mut &mut HistoryNode],
+        _timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
         Err(StatusCode::BadHistoryOperationUnsupported)
     }
@@ -212,10 +202,10 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be readable before this is called.
     async fn history_read_at_time(
         &self,
-        context: &RequestContext,
-        details: &ReadAtTimeDetails,
-        nodes: &mut [&mut &mut HistoryNode],
-        timestamps_to_return: TimestampsToReturn,
+        _context: &RequestContext,
+        _details: &ReadAtTimeDetails,
+        _nodes: &mut [&mut &mut HistoryNode],
+        _timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
         Err(StatusCode::BadHistoryOperationUnsupported)
     }
@@ -226,10 +216,10 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be readable before this is called.
     async fn history_read_events(
         &self,
-        context: &RequestContext,
-        details: &ReadEventDetails,
-        nodes: &mut [&mut &mut HistoryNode],
-        timestamps_to_return: TimestampsToReturn,
+        _context: &RequestContext,
+        _details: &ReadEventDetails,
+        _nodes: &mut [&mut &mut HistoryNode],
+        _timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
         Err(StatusCode::BadHistoryOperationUnsupported)
     }
@@ -240,10 +230,10 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be readable before this is called.
     async fn history_read_annotations(
         &self,
-        context: &RequestContext,
-        details: &ReadAnnotationDataDetails,
-        nodes: &mut [&mut &mut HistoryNode],
-        timestamps_to_return: TimestampsToReturn,
+        _context: &RequestContext,
+        _details: &ReadAnnotationDataDetails,
+        _nodes: &mut [&mut &mut HistoryNode],
+        _timestamps_to_return: TimestampsToReturn,
     ) -> Result<(), StatusCode> {
         Err(StatusCode::BadHistoryOperationUnsupported)
     }
@@ -254,8 +244,8 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     /// Nodes are verified to be writable before this is called.
     async fn history_update(
         &self,
-        context: &RequestContext,
-        nodes: &mut [&mut &mut HistoryUpdateNode],
+        _context: &RequestContext,
+        _nodes: &mut [&mut &mut HistoryUpdateNode],
     ) -> Result<(), StatusCode> {
         Err(StatusCode::BadHistoryOperationUnsupported)
     }
@@ -265,9 +255,9 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
 impl VzljotNodeManagerImpl{
     fn new(namespaces: Vec<NamespaceMetadata>, name: &str, node_managers: NodeManagersRef, device: Device) -> Self {
         Self {
-            write_cbs: Default::default(),
+            //write_cbs: Default::default(),
             read_cbs: Default::default(),
-            method_cbs: Default::default(),
+            //method_cbs: Default::default(),
             namespaces,
             name: name.to_owned(),
             node_managers,
@@ -310,7 +300,7 @@ impl VzljotNodeManagerImpl{
         }
     }
 
-    pub fn add_read_callback(
+    pub(crate) fn add_read_callback(
         &self,
         id: NodeId,
         cb: impl Fn(&NumericRange, TimestampsToReturn, f64) -> Result<DataValue, StatusCode>
@@ -322,7 +312,7 @@ impl VzljotNodeManagerImpl{
         cbs.insert(id, Arc::new(cb));
     }
 
-    pub fn get_device(&self) -> Device {
+    pub(crate) fn get_device(&self) -> Device {
         self.device.clone()
     }
 }
