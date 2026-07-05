@@ -3,7 +3,6 @@
 // Copyright (C) 2026
 
 //!OPC UA server for different flowmeters designed by developer "vzljot"
-//use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::ops::{Add, Sub};
