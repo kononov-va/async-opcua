@@ -17,6 +17,7 @@ use opcua::{
 use crate::vzljot_node_manager::VzljotNodeManager;
 
 mod lite_m;
+mod ursv5xx;
 mod vzljot_node_manager;
 
 struct Args {
@@ -139,7 +140,7 @@ async fn main() {
 
                 let dv_v = node_manager.inner().get_device();
                 node_manager.inner().add_read_callback(v_node_id.clone(), move |_, time_stamp, _| {
-                    match crate::lite_m::get_device_current_volume(&dv_v, time_stamp) {
+                    match get_device_current_volume(&dv_v, time_stamp) {
                         Ok(vl) => Ok(vl),
                         Err(_) => Ok(data_value::DataValue::new_now_status(0, opcua_types::StatusCode::BadCommunicationError)),
                     }
@@ -170,11 +171,46 @@ async fn main() {
 fn get_device_current_value(device: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     match device.device_type {
         DeviceType::LiteM => {
-             match crate::lite_m::request_lite_m(device, time_stamp) {
+            match crate::lite_m::request_lite_m(device, time_stamp) {
                 Ok(answ) => Ok(answ),
                 Err(e) => Err(e),
             }       
         },
-        DeviceType::URSV5xx => Err(io::ErrorKind::AddrNotAvailable.into()),
+        DeviceType::URSV5xx => {
+            match crate::ursv5xx::request_ursv5xx(device, time_stamp) {
+                Ok(answ) => Ok(answ),
+                Err(e) => Err(e),
+            }
+        },
+    }
+}
+
+pub(crate) fn get_device_current_volume(device: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
+    match device.device_type {
+        DeviceType::LiteM => {
+             match crate::lite_m::request_lite_m_volume(device, time_stamp) {
+                Ok(answ) => Ok(answ),
+                Err(e) => Err(e),
+            }       
+        },
+        DeviceType::URSV5xx => {
+             match crate::ursv5xx::request_ursv5xx_volume(device, time_stamp) {
+                Ok(answ) => Ok(answ),
+                Err(e) => Err(e),
+            }       
+        },
+    }
+}
+
+pub(crate) fn request_period(device: &Device, start: opcua::types::data_types::UtcTime,
+    end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, 
+    bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode) {
+    match device.device_type {
+        DeviceType::LiteM => {
+            crate::lite_m::request_lite_m_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
+        },
+        DeviceType::URSV5xx => {
+            crate::ursv5xx::request_ursv5xx_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
+        },
     }
 }
