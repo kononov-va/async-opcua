@@ -5,7 +5,7 @@
 //!OPC UA server for different flowmeters designed by developer "vzljot"
 use std::io::{Read, Write};
 use std::net::TcpStream;
-use std::ops::{Add, Sub};
+use std::ops::{Add, AddAssign, Sub};
 use std::thread::sleep;
 use std::time::Duration;
 use std::io;
@@ -13,11 +13,12 @@ use chrono::{prelude::*};
 
 use rand::random;
 use opcua::types::{data_value, TimestampsToReturn};
+//use tokio::time::error::Error;
 
 use crate::Device;
 
 pub(crate) fn request_ursv5xx(device: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0xC0, 0x08, 0, 0x02];
+    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0x81, 0x5A, 0, 0x02];
     request[6] = device.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
@@ -32,18 +33,24 @@ pub(crate) fn request_ursv5xx(device: &Device, time_stamp: TimestampsToReturn) -
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])*0.06);
-            dv.set_timestamps(time_stamp, 
-                opcua_types::DateTime::from(Utc::now()), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(dv)
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])*0.06);
+                dv.set_timestamps(time_stamp, 
+                    opcua_types::DateTime::from(Utc::now()), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(dv)
+            }
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         },
         Err(e) => Err(e),
     }
 }
 
 pub(crate) fn request_ursv5xx_volume(device: &Device, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0x80, 0x02, 0, 0x08];
+    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0x80, 0x22, 0, 0x08];
     request[6] = device.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
@@ -58,18 +65,24 @@ pub(crate) fn request_ursv5xx_volume(device: &Device, time_stamp: TimestampsToRe
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut dv = data_value::DataValue::new_now(get_ursv5xx_volume( &answer[9..25]));
-            dv.set_timestamps(time_stamp, 
-                opcua_types::DateTime::from(Utc::now()), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(dv)
+                let id = u16::from_be_bytes([answer[0], answer[1]]);
+                if id == session_id{
+                let mut dv = data_value::DataValue::new_now(get_ursv5xx_volume( &answer[9..25]));
+                dv.set_timestamps(time_stamp, 
+                    opcua_types::DateTime::from(Utc::now()), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(dv)
+            }
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         },
         Err(e) => Err(e),
     }
 }
 
-fn request_ursv5xx_arch_index(device_lite_m: &Device) -> Result<u16, io::Error> {
-    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0x40, 0x17, 0, 0x01];
+fn request_ursv5xx_arch_time(device_lite_m: &Device) -> Result<DateTime<Local>, io::Error> {
+    let mut request: [u8; 12] = [0, 0, 0, 0, 0, 0x06, 0, 0x04, 0x80, 0x06, 0, 0x02];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
@@ -84,7 +97,10 @@ fn request_ursv5xx_arch_index(device_lite_m: &Device) -> Result<u16, io::Error> 
     let mut answer: [u8; 20]= [0; 20];
     match str.read(&mut answer) {
         Ok(_) => {
-            Ok(u16::from_be_bytes([answer[9], answer[10],]))
+            let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
+            let t = DateTime::<Local>::from(DateTime::from_timestamp_secs(i64::from(time_source)).unwrap());//.with_timezone(&Local);
+            Ok(t)
+
         },
         Err(e) => Err(e),
     }
@@ -94,12 +110,12 @@ fn request_ursv5xx_end_point(device: &Device, time_stamp: TimestampsToReturn) ->
     let mut result: Vec<opcua::types::data_value::DataValue> = Vec::new();
     let mut status_result = opcua_types::StatusCode::BadCommunicationError;
 
-    let index = match request_ursv5xx_arch_index(device) {
+    let time = match request_ursv5xx_arch_time(device) {
         Ok(i) => i,
         Err(_) => {return (None, status_result);}
     };
 
-    let value = match request_ursv5xx_by_index(device, index, time_stamp) {
+    let value = match request_ursv5xx_at_time(device, time, time_stamp) {
         Ok(mut val) => {val.set_timestamps(time_stamp, val.source_timestamp.unwrap(), 
                 val.server_timestamp.unwrap());
             status_result = opcua_types::StatusCode::Good;
@@ -114,13 +130,13 @@ fn request_ursv5xx_start_point(device: &Device, time_stamp: TimestampsToReturn) 
     let mut result: Vec<opcua::types::data_value::DataValue> = Vec::new();
     let mut status_result = opcua_types::StatusCode::BadCommunicationError;
 
-    let mut index = match request_ursv5xx_arch_index(device) {
+    let mut time: DateTime<Local> = match request_ursv5xx_arch_time(device) {
         Ok(i) => i,
         Err(_) => {return (None, status_result);}
     };
-    index += 1;
+    time.add_assign(Duration::from_hours(1));
 
-    let value = match request_ursv5xx_by_index(device, index, time_stamp) {
+    let value = match request_ursv5xx_at_time(device, time, time_stamp) {
         Ok(mut val) => {val.set_timestamps(time_stamp, val.source_timestamp.unwrap(), 
                 val.server_timestamp.unwrap());
             status_result = opcua_types::StatusCode::Good;
@@ -243,7 +259,7 @@ fn get_period(start: opcua::types::data_types::UtcTime, end: opcua::types::data_
 }
 
 fn request_ursv5xx_at_time(device_lite_m: &Device, request_time: chrono::DateTime<chrono::Local>, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
+    let mut request: [u8; 19] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x00, 0, 0x01, 0x01, 0, 0, 0, 0, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
@@ -257,11 +273,11 @@ fn request_ursv5xx_at_time(device_lite_m: &Device, request_time: chrono::DateTim
 
     str.write(&request)?;
     
-    read_arc_answer(device_lite_m, str, time_stamp)    
+    read_arc_answer(session_id, device_lite_m, str, time_stamp)    
 }
 
 fn request_ursv5xx_by_index(device_lite_m: &Device, request_index: u16, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 15] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x00, 0, 0];
+    let mut request: [u8; 15] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x00, 0, 0x01, 0x00, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
@@ -272,39 +288,43 @@ fn request_ursv5xx_by_index(device_lite_m: &Device, request_index: u16, time_sta
 
     str.write(&request)?;
 
-    read_arc_answer(device_lite_m, str, time_stamp) 
+    read_arc_answer(session_id, device_lite_m, str, time_stamp) 
 }
 
-fn read_arc_answer(device_lite_m: &Device, mut str: TcpStream, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
+fn read_arc_answer(session_id: u16, device_lite_m: &Device, mut str: TcpStream, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     str.set_read_timeout(Some(Duration::from_millis(device_lite_m.read_timeout)))?;
  
-    let mut answer: [u8; 40]= [0; 40];
+    let mut answer: [u8; 72]= [0; 72];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut staus_code = opcua_types::StatusCode::Good;
-            let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
-            if time_source == 0 {
-                staus_code = opcua_types::StatusCode::BadNoData;
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                let mut staus_code = opcua_types::StatusCode::Good;
+                let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
+                if time_source == 0 {
+                    staus_code = opcua_types::StatusCode::BadNoData;
+                }
+                let t = chrono::DateTime::from_timestamp_secs(i64::from(time_source))
+                    .unwrap().sub(Local::now().offset().fix());//.with_timezone(&Local);
+                let mut val = data_value::DataValue::new_at_status( get_ursv5xx_volume(&answer[17..26]), 
+                    opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), staus_code);
+                val.set_timestamps(time_stamp, 
+                    val.source_timestamp.unwrap(), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(val)
             }
-            let t = chrono::DateTime::from_timestamp_secs(i64::from(time_source))
-                .unwrap().sub(Local::now().offset().fix());//.with_timezone(&Local);
-            let mut val = data_value::DataValue::new_at_status( get_ursv5xx_volume(&answer[13..29]), 
-                opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), staus_code);
-            val.set_timestamps(time_stamp, 
-                val.source_timestamp.unwrap(), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(val)
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         }
         Err(e) => Err(e),
     }    
 }
 
-fn get_ursv5xx_volume(buffer: &[u8]) -> f64
+fn get_ursv5xx_volume(buffer: &[u8]) -> f32
 {
-    let positive_i = i32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
-    let positive_f = f32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
-    let negative_i = i32::from_be_bytes([buffer[8], buffer[9], buffer[10], buffer[11]]);
-    let negative_f = f32::from_be_bytes([buffer[12], buffer[13], buffer[14], buffer[15]]);
+    let positive_f = f32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
+    let negative_f = f32::from_be_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
 
-    f64::from(positive_i) + f64::from(positive_f) - f64::from(negative_i) - f64::from(negative_f)
+    positive_f + negative_f
 }

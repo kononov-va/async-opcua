@@ -32,11 +32,17 @@ pub(crate) fn request_lite_m(device_lite_m: &Device, time_stamp: TimestampsToRet
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])*0.06);
-            dv.set_timestamps(time_stamp, 
-                opcua_types::DateTime::from(Utc::now()), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(dv)
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                let mut dv = data_value::DataValue::new_now(f32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]])*0.06);
+                dv.set_timestamps(time_stamp, 
+                    opcua_types::DateTime::from(Utc::now()), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(dv)
+            }
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         },
         Err(e) => Err(e),
     }
@@ -58,11 +64,17 @@ pub(crate) fn request_lite_m_volume(device_lite_m: &Device, time_stamp: Timestam
     let mut answer: [u8; 56]= [0; 56];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut dv = data_value::DataValue::new_now(get_lite_m_volume( &answer[9..25]));
-            dv.set_timestamps(time_stamp, 
-                opcua_types::DateTime::from(Utc::now()), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(dv)
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                let mut dv = data_value::DataValue::new_now(get_lite_m_volume( &answer[9..25]));
+                dv.set_timestamps(time_stamp, 
+                    opcua_types::DateTime::from(Utc::now()), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(dv)
+            }
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         },
         Err(e) => Err(e),
     }
@@ -84,7 +96,13 @@ fn request_lite_m_arch_index(device_lite_m: &Device) -> Result<u16, io::Error> {
     let mut answer: [u8; 20]= [0; 20];
     match str.read(&mut answer) {
         Ok(_) => {
-            Ok(u16::from_be_bytes([answer[9], answer[10],]))
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                Ok(u16::from_be_bytes([answer[9], answer[10],]))
+            }
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         },
         Err(e) => Err(e),
     }
@@ -257,7 +275,7 @@ fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime
 
     str.write(&request)?;
     
-    read_arc_answer(device_lite_m, str, time_stamp)    
+    read_arc_answer(session_id, device_lite_m, str, time_stamp)    
 }
 
 fn request_lite_m_by_index(device_lite_m: &Device, request_index: u16, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
@@ -272,28 +290,34 @@ fn request_lite_m_by_index(device_lite_m: &Device, request_index: u16, time_stam
 
     str.write(&request)?;
 
-    read_arc_answer(device_lite_m, str, time_stamp) 
+    read_arc_answer(session_id, device_lite_m, str, time_stamp) 
 }
 
-fn read_arc_answer(device_lite_m: &Device, mut str: TcpStream, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
+fn read_arc_answer(session_id: u16, device_lite_m: &Device, mut str: TcpStream, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
     str.set_read_timeout(Some(Duration::from_millis(device_lite_m.read_timeout)))?;
  
     let mut answer: [u8; 40]= [0; 40];
     match str.read(&mut answer) {
         Ok(_) => {
-            let mut staus_code = opcua_types::StatusCode::Good;
-            let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
-            if time_source == 0 {
-                staus_code = opcua_types::StatusCode::BadNoData;
+            let id = u16::from_be_bytes([answer[0], answer[1]]);
+            if id == session_id{
+                let mut staus_code = opcua_types::StatusCode::Good;
+                let time_source = u32::from_be_bytes([answer[9], answer[10], answer[11], answer[12]]);
+                if time_source == 0 {
+                    staus_code = opcua_types::StatusCode::BadNoData;
+                }
+                let t = chrono::DateTime::from_timestamp_secs(i64::from(time_source))
+                    .unwrap().sub(Local::now().offset().fix());//.with_timezone(&Local);
+                let mut val = data_value::DataValue::new_at_status( get_lite_m_volume(&answer[13..29]), 
+                    opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), staus_code);
+                val.set_timestamps(time_stamp, 
+                    val.source_timestamp.unwrap(), 
+                    opcua_types::DateTime::from(Utc::now()));
+                Ok(val)
             }
-            let t = chrono::DateTime::from_timestamp_secs(i64::from(time_source))
-                .unwrap().sub(Local::now().offset().fix());//.with_timezone(&Local);
-            let mut val = data_value::DataValue::new_at_status( get_lite_m_volume(&answer[13..29]), 
-                opcua_types::DateTime::from(chrono::DateTime::<Utc>::from(t)), staus_code);
-            val.set_timestamps(time_stamp, 
-                val.source_timestamp.unwrap(), 
-                opcua_types::DateTime::from(Utc::now()));
-            Ok(val)
+            else {
+                Err(io::Error::new(io::ErrorKind::Other, "Bad session id"))
+            }
         }
         Err(e) => Err(e),
     }    
