@@ -171,12 +171,22 @@ impl InMemoryNodeManagerImpl for VzljotNodeManagerImpl {
     ) -> Result<(), StatusCode> {
         if details.is_read_modified == false {        
             for node in nodes{
-                let (hdv, status_node) = 
-                    crate::request_period(&self.device, details.start_time, details.end_time, 
+                let mut start_time = details.start_time;
+                match node.continuation_point() {
+                    Some(cp) => {
+                        start_time = cp.get::<opcua::types::data_types::UtcTime>().unwrap().clone();
+                    },
+                    None => {},
+                };
+                let (hdv, status_node, continuation) = crate::request_period(&self.device, start_time, details.end_time, 
                         timestamps_to_return, details.return_bounds, details.num_values_per_node);
                 node.set_result(opcua_types::HistoryData {data_values: hdv});
                 node.set_status(status_node);
-                //node.set_next_continuation_point(continuation_point);
+
+                match continuation {
+                    Some(point) => node.set_next_continuation_point(Some(opcua_server::ContinuationPoint::new(Box::new(point)))),
+                    None => {},
+                }   
             }
             return Ok(())
         }

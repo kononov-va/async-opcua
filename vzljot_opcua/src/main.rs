@@ -19,6 +19,7 @@ use crate::vzljot_node_manager::VzljotNodeManager;
 mod lite_m;
 mod ursv5xx;
 mod vzljot_node_manager;
+mod period_util;
 
 struct Args {
     help: bool,
@@ -204,7 +205,7 @@ pub(crate) fn get_device_current_volume(device: &Device, time_stamp: TimestampsT
 
 pub(crate) fn request_period(device: &Device, start: opcua::types::data_types::UtcTime,
     end: opcua::types::data_types::UtcTime, time_stamp: TimestampsToReturn, 
-    bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode) {
+    bounds: bool, num_values_per_node: u32) -> (Option<Vec<opcua::types::data_value::DataValue>>, opcua_types::StatusCode, Option<opcua::types::data_types::UtcTime>) {
     match device.device_type {
         DeviceType::LiteM => {
             crate::lite_m::request_lite_m_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
