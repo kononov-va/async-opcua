@@ -18,6 +18,7 @@ use crate::vzljot_node_manager::VzljotNodeManager;
 
 mod lite_m;
 mod ursv5xx;
+mod ursv31x;
 mod vzljot_node_manager;
 mod period_util;
 
@@ -70,6 +71,7 @@ Usage:
 enum DeviceType {
     LiteM,
     URSV5xx,
+    URSV31x,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -183,6 +185,12 @@ fn get_device_current_value(device: &Device, time_stamp: TimestampsToReturn) -> 
                 Err(e) => Err(e),
             }
         },
+         DeviceType::URSV31x => {
+            match crate::ursv31x::request_ursv31x(device, time_stamp) {
+                Ok(answ) => Ok(answ),
+                Err(e) => Err(e),
+            }
+        },       
     }
 }
 
@@ -200,6 +208,13 @@ pub(crate) fn get_device_current_volume(device: &Device, time_stamp: TimestampsT
                 Err(e) => Err(e),
             }       
         },
+        DeviceType::URSV31x => {
+             match crate::ursv31x::request_ursv31x_volume(device, time_stamp) {
+                Ok(answ) => Ok(answ),
+                Err(e) => Err(e),
+            }       
+        },
+                
     }
 }
 
@@ -212,6 +227,9 @@ pub(crate) fn request_period(device: &Device, start: opcua::types::data_types::U
         },
         DeviceType::URSV5xx => {
             crate::ursv5xx::request_ursv5xx_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
+        },
+        DeviceType::URSV31x => {
+            crate::ursv31x::request_ursv31x_arhive_period(device, start, end, time_stamp, bounds, num_values_per_node)       
         },
     }
 }

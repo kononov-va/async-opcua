@@ -226,7 +226,7 @@ fn request_lite_m_at_time(device_lite_m: &Device, request_time: chrono::DateTime
 }
 
 fn request_lite_m_by_index(device_lite_m: &Device, request_index: u16, time_stamp: TimestampsToReturn) -> Result<data_value::DataValue, io::Error> {
-    let mut request: [u8; 15] = [0, 0, 0, 0, 0, 0x0D, 0, 0x41, 0, 0x01, 0, 0x01, 0x00, 0, 0];
+    let mut request: [u8; 15] = [0, 0, 0, 0, 0, 0x09, 0, 0x41, 0, 0x01, 0, 0x01, 0x00, 0, 0];
     request[6] = device_lite_m.device_address;
     let session_id: u16 = random::<u16>();
     request[0..2].copy_from_slice(&session_id.to_be_bytes());
