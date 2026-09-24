@@ -6,7 +6,7 @@ members = [
   "async-opcua-*",
   "tools/certificate-creator",
   "dotnet-tests/external-tests",
-  "fuzz", "codegen-tests", "vzljot_opcua",
+  "fuzz", "codegen-tests", "vzljot_opcua", "metran900",
 ]
 
 [workspace.lints.rust]
