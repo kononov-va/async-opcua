@@ -104,7 +104,8 @@ async fn start_ua_server(verb: bool, port: String, address: Vec<u8>, timeout_s: 
     let (server, handle) = server_builder
             .build()
             .unwrap();
-
+    
+    let dim: [u32; 1] = [12];
     for device in address {
         let ns = handle.get_namespace_index(format!("urn:metran900_{}", device).as_str()).unwrap();
 
@@ -132,6 +133,7 @@ async fn start_ua_server(verb: bool, port: String, address: Vec<u8>, timeout_s: 
             address_space::VariableBuilder::new(&v_node_id, "items", "items")
                 .data_type(DataTypeId::Float)
                 .value_rank(1)
+                .array_dimensions(&dim)
                 .organized_by(&folder_id)
                 .value((s, values))
                 .insert(&mut *addr);
