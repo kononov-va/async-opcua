@@ -148,7 +148,15 @@ async fn start_ua_server(verb: bool, port: String, address: Vec<u8>, timeout_s: 
             node_manager.inner().add_read_callback(v_node_id.clone(), move |_, time_stamp, _| {
                 match get_device_current_value(&settings, time_stamp) {
                     Ok(vl) => Ok(vl),
-                    Err(_) => Ok(data_value::DataValue::new_now_status(0, opcua_types::StatusCode::BadCommunicationError)),
+                    Err(_) => {
+                        let arr = [0; 12].iter().map(|_| 0f32.into()).collect::<Vec<Variant>>();
+                        let type_id = arr[0].type_id();
+                        let VariantTypeId::Scalar(s) = type_id else {
+                            panic!("Scalar values had array type");
+                        };
+                        Ok(data_value::DataValue::new_now_status(Array::new(s, arr).unwrap(), 
+                            opcua_types::StatusCode::BadCommunicationError))
+                    },
                 }
             });
         }
