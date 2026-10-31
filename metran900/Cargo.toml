@@ -19,6 +19,7 @@ async-opcua-crypto = { path = "../async-opcua-crypto", version = "0.18.0" }
 async-opcua-nodes = { path = "../async-opcua-nodes", version = "0.18.0" }
 async-opcua-types = { path = "../async-opcua-types", version = "0.18.0" }
 async-opcua-server = { path = "../async-opcua-server", version = "0.18.0" }
+clap = {version = "4.6.7", features = ["derive"]}
 
 [dependencies.async-opcua]
 path = "../async-opcua"

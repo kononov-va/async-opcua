@@ -3,10 +3,10 @@
 // Copyright (C) 2026
 
 //!OPC UA server for Metran 900
-use std::{env, error::Error, fs::File, io::{self, Read, Write}, time::Duration};
+use std::{error::Error, fs::File, io::{self, Read, Write}, time::Duration};
 use crc16::*;
 use std::fmt;
-//use fork::daemon;
+use clap::Parser;
 use daemonize::Daemonize;
 
 use opcua::{
@@ -28,39 +28,38 @@ struct DeviceSettings{
     s_verb: bool
 }
 
+#[derive(Parser, Clone, Debug)]
+struct AppArgs{
+    ///Отображать ошибки связи
+    #[arg(short = 'v', long = "verbose")]
+    verb: bool,
+    ///Порт к которму подключены устройства
+    #[arg(short = 'p', long = "port")]
+    port: Option<String>,
+    ///Адреса устройств для опроса
+    #[arg(short = 'a', long = "addresses", num_args = 1..)]
+    address: Option<Vec<u8>>,
+    ///Таймаут запроса в миллисекундах
+    #[arg(short = 't', long = "timeout")]
+    timeout: Option<u64>,
+    ///Количество повторов при запросе
+    #[arg(short = 'r', long = "retry")]
+    retry: Option<u8>,
+    ///Включить поддержку SystemD
+    #[arg(short = 's', long = "systemd")]
+    sysd: bool,        
+}
+
 fn main() {
-    let mut verb = false;
-    let mut port = String::from("/dev/ttyS3");
-    let mut address: Vec<u8> = Vec::new();
-    let mut timeout: u64 = 250;
-    let mut retry: u8 = 2;
-    let mut sysd_f: bool = false;
-
-    let mut args = env::args().collect::<Vec<String>>().into_iter();
-    loop {
-        match args.next() {
-            Some(arg) => {
-                if arg == "-v" { //Выводить в лог ошибки связи
-                    verb = true
-                } else if arg == "-p" { //Уквзать порт в формате -p /devttySx (порт по умолчанию /dev/ttyS3)
-                    port = args.next().expect("Wrong port format");
-                } else if arg == "-a" {//Уквзать адреса приборов в формате -а 1,x,y и т.д.
-                    let str_addr= args.next().expect("Wrong address format"); 
-                    for ad in str_addr.split_terminator(",") {
-                        address.push(ad.parse::<u8>().expect("Wrong address format"));
-                    };
-                } else if arg == "-t" {//Уквзать тфймаут в формате -t значение в миллисекундах
-                    timeout = args.next().expect("Wrong timeout").parse().expect("Wrong timeout");
-                } else if arg == "-r" {//Уквзать количество повторов при опросе в формате -r значение от 0 до 255
-                    retry = args.next().expect("Wrong retry").parse().expect("Wrong retry");
-                } else if arg == "-sysd" {//Не использовать старый механизм запуска фонового процесса
-                    sysd_f = true;
-                }
-            },
-            None => break,
-        }
-    }
-
+    let args = AppArgs::parse();
+    
+    let verb = args.verb;
+    let port = args.port.unwrap_or(String::from("/dev/ttyS3"));
+    let address = args.address.unwrap_or(Vec::new());
+    let timeout = args.timeout.unwrap_or(250);
+    let retry = args.retry.unwrap_or(2);
+    let sysd_f = args.sysd;
+   
     if sysd_f == false {
        let stdout = File::create("/tmp/daemon.out").unwrap();
        let stderr = File::create("/tmp/daemon.err").unwrap();
@@ -70,9 +69,8 @@ fn main() {
             .chown_pid_file(true) // is optional, see `Daemonize` documentation
             .working_directory("/tmp") // for default behaviour.
             .user("nobody")
-            .group("daemon") // Group name
-            .group(2) // or group id.
-            .umask(0o777) // Set umask, `0o027` by default.
+            .group("dialout") // Group name
+            .umask(0o666) // Set umask, `0o027` by default.
             .stdout(stdout) // Redirect stdout to `/tmp/daemon.out`.
             .stderr(stderr) // Redirect stderr to `/tmp/daemon.err`.
             .privileged_action(|| "Executed before drop privileges");
